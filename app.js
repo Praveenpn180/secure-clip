@@ -223,12 +223,12 @@ function requestEdit(id) {
 
 async function deleteEntry(id) {
   const entry = getEntry(id);
-  if (!confirm(`Delete "${entry.title}"? This can't be undone.`)) return;
+  if (!confirm("Delete this item? This can't be undone.")) return;
   state.entries = state.entries.filter((e) => e.id !== id);
   delete state.unlockedText[id];
   delete state.sessionPass[id];
   if (ui.openId === id) ui.openId = null;
-  await persist(`Delete "${entry.title}"`);
+  await persist("Delete item");
 }
 
 // ---------- rendering ----------
@@ -268,11 +268,8 @@ function render() {
       }
       const body = list.querySelector(`.card[data-id="${entry.id}"] .card-body`);
       if (body && !unlockForm) {
-        body.querySelectorAll(".line-row").forEach((row) => {
-          row.onclick = () => copyText(row.dataset.full);
-        });
-        const copyAll = $(".btn-copy-all", body);
-        if (copyAll) copyAll.onclick = () => copyText(getEntryText(entry));
+        const copyBtn = $(".btn-copy", body);
+        if (copyBtn) copyBtn.onclick = () => copyText(getEntryText(entry));
         const editBtn = $(".btn-edit", body);
         if (editBtn) editBtn.onclick = () => requestEdit(entry.id);
         const delBtn = $(".btn-delete", body);
@@ -293,15 +290,18 @@ function cardHtml(entry) {
   const isOpen = ui.openId === entry.id;
   const locked = !!entry.locked;
   const isUnlocked = locked && entry.id in state.unlockedText;
-  const previewText = locked && !isUnlocked ? "🔒 tap to unlock" : (getEntryText(entry).split("\n")[0] || "(empty)");
+  const text = locked && !isUnlocked ? "" : getEntryText(entry);
+  const lines = text.split("\n").filter((l) => l.trim() !== "");
+  const heading = locked && !isUnlocked ? "🔒 Locked item" : (lines[0] || "(empty)");
+  const sub = locked && !isUnlocked ? "tap to unlock" : lines[1] || "";
 
   return `
     <div class="card ${isOpen ? "open" : ""}" data-id="${entry.id}">
       <div class="card-head">
         ${locked ? '<span class="lock-badge">🔒</span>' : ""}
         <div style="flex:1;min-width:0">
-          <span class="title">${esc(entry.title || "Untitled")}</span>
-          <span class="preview">${esc(previewText)}</span>
+          <span class="title">${esc(heading)}</span>
+          ${sub ? `<span class="preview">${esc(sub)}</span>` : ""}
         </div>
         <span class="chev">›</span>
       </div>
@@ -324,18 +324,10 @@ function unlockHtml(entry) {
 
 function bodyHtml(entry) {
   const text = getEntryText(entry);
-  const lines = text.split("\n");
-  const lineRows = lines
-    .map((line) => {
-      if (line.trim() === "") return "";
-      return `<div class="line-row" data-full="${esc(line)}"><span class="txt">${esc(line)}</span><span class="copy-ico">⧉</span></div>`;
-    })
-    .join("");
-
   return `
-    <div class="lines">${lineRows || '<div class="line-row" data-full=""><span class="txt" style="color:var(--text-dim)">(empty)</span></div>'}</div>
+    <div class="text-block">${text ? esc(text) : '<span style="color:var(--text-dim)">(empty)</span>'}</div>
     <div class="actions-row">
-      <button class="btn accent btn-copy-all">⧉ Copy all</button>
+      <button class="btn accent btn-copy">⧉ Copy</button>
       <button class="btn btn-edit">✎ Edit</button>
       ${entry.locked ? '<button class="btn ghost btn-relock">🔒 Lock again</button>' : ""}
       <button class="btn danger btn-delete">Delete</button>
@@ -352,18 +344,15 @@ function openEditor(entry) {
 function renderEditorModal() {
   const entry = ui.modal.entry;
   const isNew = !entry;
-  const title = entry ? entry.title : "";
   const text = entry ? getEntryText(entry) : "";
   const locked = entry ? !!entry.locked : false;
-  const cachedPass = entry ? state.sessionPass[entry.id] : null;
 
   return `
     <div class="overlay" id="overlay">
       <div class="sheet">
         <h2>${isNew ? "Add item" : "Edit item"}</h2>
         <div class="editor">
-          <input type="text" class="title-input" id="edTitle" placeholder="Title (e.g. Bank login)" value="${esc(title)}">
-          <textarea id="edText" placeholder="username&#10;password&#10;anything else…">${esc(text)}</textarea>
+          <textarea id="edText" placeholder="username&#10;password&#10;anything else…" autofocus>${esc(text)}</textarea>
           <label class="lock-toggle">
             <input type="checkbox" id="edLock" ${locked ? "checked" : ""}>
             🔒 Lock this item with a passphrase
@@ -410,14 +399,13 @@ function renderPassFields() {
 
 async function handleEditorSave() {
   const entry = ui.modal.entry;
-  const title = $("#edTitle").value.trim() || "Untitled";
   const text = $("#edText").value;
   const locked = $("#edLock").checked;
   const errEl = $("#edErr");
   errEl.style.display = "none";
 
   const record = entry ? { ...entry } : { id: uid(), createdAt: nowIso() };
-  record.title = title;
+  delete record.title;
   record.updatedAt = nowIso();
 
   if (locked) {
@@ -450,7 +438,7 @@ async function handleEditorSave() {
 
   closeModal();
   ui.openId = record.id;
-  await persist(`${entry ? "Update" : "Add"} "${title}"`);
+  await persist(`${entry ? "Update" : "Add"} item`);
 }
 
 // ---------- settings modal ----------
@@ -612,7 +600,7 @@ function renderModal() {
     $("#edSave").onclick = handleEditorSave;
     $("#edLock").onchange = renderPassFields;
     renderPassFields();
-    $("#edTitle").focus();
+    $("#edText").focus();
   }
 }
 

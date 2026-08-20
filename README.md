@@ -32,10 +32,10 @@ name, and (optionally) file path/branch → Save & connect. On mobile, use
 
 ## Using it
 
-- **＋** adds an item: a title + multi-line text (e.g. username on line 1,
-  password on line 2).
-- Tap an item to expand it. Tap any **line** to copy just that line, or
-  **Copy all** for the whole thing.
+- **＋** adds an item: just multi-line text (e.g. username on line 1,
+  password on line 2). The list shows each item by its first line or two,
+  no separate title to manage.
+- Tap an item to expand it, then **Copy** to grab the whole thing.
 - Check **Lock this item with a passphrase** to encrypt it (AES-GCM, key
   derived from your passphrase via PBKDF2). A locked item asks for the
   passphrase before it'll show its contents on any device — the passphrase

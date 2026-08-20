@@ -194,36 +194,19 @@ main { padding-top: 18px; }
   margin-top: 6px;
 }
 
-.lines {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 10px;
-}
-.line-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.text-block {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px 10px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-.line-row:hover { border-color: var(--accent-dim); }
-.line-row:active { background: rgba(79,209,197,0.08); }
-.line-row .txt {
-  flex: 1;
-  min-width: 0;
+  padding: 10px 12px;
   font-family: var(--mono);
   font-size: 0.85rem;
-  white-space: pre;
-  overflow-x: auto;
-  scrollbar-width: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 40vh;
+  overflow-y: auto;
+  margin-bottom: 10px;
 }
-.line-row .txt::-webkit-scrollbar { display: none; }
-.line-row .copy-ico { color: var(--text-dim); flex-shrink: 0; font-size: 0.85rem; }
 
 .actions-row {
   display: flex;
@@ -274,7 +257,6 @@ input, textarea {
   font-size: 0.88rem;
   font-family: var(--mono);
 }
-input[type=text].title-input { font-family: var(--sans); font-weight: 600; }
 .lock-toggle {
   display: flex;
   align-items: center;
