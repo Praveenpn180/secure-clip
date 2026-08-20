@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SecureClip</title>
+<meta name="theme-color" content="#0d0f13">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap">
+    <div class="brand">
+      <span class="dot"></span> SecureClip
+      <span class="sync-state" id="syncState"></span>
+    </div>
+    <button class="icon-btn" id="btnRefresh" title="Refresh from GitHub">⟳</button>
+    <button class="icon-btn" id="btnSettings" title="Settings">⚙</button>
+    <button class="icon-btn primary" id="btnAdd" title="Add new">＋</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="list"></div>
+</main>
+
+<div id="modalRoot"></div>
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

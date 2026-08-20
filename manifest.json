@@ -1,0 +1,13 @@
+{
+  "name": "SecureClip",
+  "short_name": "SecureClip",
+  "description": "Personal clipboard sync, stored in your own GitHub repo.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d0f13",
+  "theme_color": "#0d0f13",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
