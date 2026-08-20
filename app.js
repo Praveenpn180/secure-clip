@@ -43,6 +43,12 @@ function bytesToB64(bytes) { let bin = ""; bytes.forEach((b) => (bin += String.f
 function b64ToBytes(b64) { const bin = atob(b64); return Uint8Array.from(bin, (c) => c.charCodeAt(0)); }
 function utf8ToB64(str) { return bytesToB64(new TextEncoder().encode(str)); }
 function b64ToUtf8(b64) { return new TextDecoder().decode(b64ToBytes(b64.replace(/\s/g, ""))); }
+function utf8ToB64Url(str) { return utf8ToB64(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); }
+function b64UrlToUtf8(str) {
+  let b64 = str.replace(/-/g, "+").replace(/_/g, "/");
+  while (b64.length % 4) b64 += "=";
+  return b64ToUtf8(b64);
+}
 
 async function deriveKey(passphrase, saltBytes) {
   const keyMaterial = await crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase), "PBKDF2", false, ["deriveKey"]);
@@ -121,6 +127,7 @@ const state = {
   sha: null,
   unlockedText: {},   // id -> decrypted plaintext, session-only (never persisted)
   sessionPass: {},    // id -> passphrase used to unlock, session-only
+  defaultPass: null,  // optional shared passphrase, session-only, never saved or synced
 };
 const ui = {
   openId: null,
@@ -172,9 +179,19 @@ async function persist(message) {
 }
 
 // ---------- actions ----------
-function openCard(id) { ui.openId = ui.openId === id ? null : id; render(); }
+async function openCard(id) {
+  const opening = ui.openId !== id;
+  ui.openId = opening ? id : null;
+  render();
+  if (opening) {
+    const entry = getEntry(id);
+    if (entry && entry.locked && !(id in state.unlockedText) && state.defaultPass) {
+      await handleUnlock(id, state.defaultPass, true); // try the default silently, no error shown if it's not this item's passphrase
+    }
+  }
+}
 
-async function handleUnlock(id, passphrase) {
+async function handleUnlock(id, passphrase, silent = false) {
   const entry = getEntry(id);
   try {
     const text = await decryptText(entry.encrypted, passphrase);
@@ -182,7 +199,7 @@ async function handleUnlock(id, passphrase) {
     state.sessionPass[id] = passphrase;
     ui.unlockError[id] = null;
   } catch {
-    ui.unlockError[id] = "Wrong passphrase";
+    if (!silent) ui.unlockError[id] = "Wrong passphrase";
   }
   render();
 }
@@ -294,10 +311,11 @@ function cardHtml(entry) {
 
 function unlockHtml(entry) {
   const err = ui.unlockError[entry.id];
+  const prefill = state.defaultPass || "";
   return `
     <form class="unlock-form">
       <div class="unlock-row">
-        <input type="password" name="pass" placeholder="Passphrase" autocomplete="off" autofocus>
+        <input type="password" name="pass" placeholder="Passphrase" autocomplete="off" value="${esc(prefill)}" ${prefill ? "" : "autofocus"}>
         <button type="submit" class="btn accent">Unlock</button>
       </div>
       ${err ? `<div class="err-text">${esc(err)}</div>` : ""}
@@ -367,14 +385,15 @@ function renderPassFields() {
   const container = $("#passFields");
   const entry = ui.modal.entry;
   const cachedPass = entry ? state.sessionPass[entry.id] : null;
+  const prefill = cachedPass || state.defaultPass || "";
   const locked = $("#edLock").checked;
   if (!locked) { container.innerHTML = ""; return; }
 
-  if (cachedPass) {
+  if (prefill) {
     container.innerHTML = `
       <div class="field pass-field">
-        <label>Passphrase (change to rotate it)</label>
-        <input type="password" id="edPass" value="${esc(cachedPass)}" autocomplete="off">
+        <label>Passphrase ${cachedPass ? "(change to rotate it)" : "(from your default — edit to use a different one for just this item)"}</label>
+        <input type="password" id="edPass" value="${esc(prefill)}" autocomplete="off">
       </div>`;
   } else {
     container.innerHTML = `
@@ -469,8 +488,88 @@ function renderSettingsModal() {
           <button class="btn ghost" id="stCancel">Cancel</button>
           <button class="btn accent" id="stSave">Save & connect</button>
         </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:18px 0">
+
+        <h2>Default passphrase</h2>
+        <div class="field">
+          <label>Used to auto-unlock locked items and pre-fill new locks</label>
+          <input type="password" id="stDefaultPass" value="${esc(state.defaultPass || "")}" autocomplete="off" placeholder="Leave blank to keep using separate passphrases">
+          <div class="hint">Kept in memory for this session only — never saved to this device or synced to GitHub. Any item can still use its own different passphrase.</div>
+        </div>
+        <div class="sheet-actions" style="justify-content:flex-start">
+          <button class="btn ghost" id="stClearDefault">Clear</button>
+        </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:18px 0">
+
+        <h2>Connect a new device</h2>
+        <div class="hint" style="margin-bottom:10px">Generates a one-time link containing these settings (including your token). Open it once on the other device, or scan the QR — it's removed from the address bar automatically after import. Treat it like a password: only share it over a channel you trust.</div>
+        <div class="sheet-actions" style="justify-content:flex-start">
+          <button class="btn" id="stCopyLink">🔗 Copy setup link</button>
+          <button class="btn" id="stShowQr">▦ Show QR code</button>
+        </div>
+        <div id="qrBox" style="margin-top:12px;display:flex;justify-content:center"></div>
       </div>
     </div>`;
+}
+
+let qrLibLoading = null;
+function loadQrLib() {
+  if (window.QRCode) return Promise.resolve();
+  if (qrLibLoading) return qrLibLoading;
+  qrLibLoading = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js";
+    script.onload = resolve;
+    script.onerror = () => { qrLibLoading = null; reject(new Error("load failed")); };
+    document.head.appendChild(script);
+  });
+  return qrLibLoading;
+}
+
+function buildSetupUrl() {
+  const s = getSettings();
+  if (!settingsComplete(s)) { toast("Save settings first"); return null; }
+  const payload = utf8ToB64Url(JSON.stringify(s));
+  return `${location.origin}${location.pathname}#setup=${payload}`;
+}
+
+async function copySetupLink() {
+  const url = buildSetupUrl();
+  if (url) await copyText(url);
+}
+
+async function showSetupQr() {
+  const url = buildSetupUrl();
+  if (!url) return;
+  const box = $("#qrBox");
+  box.textContent = "Loading…";
+  try {
+    await loadQrLib();
+    box.innerHTML = "";
+    new QRCode(box, { text: url, width: 200, height: 200, colorDark: "#0d0f13", colorLight: "#e6e8ec" });
+  } catch {
+    box.textContent = "Couldn't load the QR generator — check your connection.";
+  }
+}
+
+function tryImportSetupFromHash() {
+  const m = location.hash.match(/^#setup=(.+)$/);
+  if (!m) return;
+  try {
+    const s = JSON.parse(b64UrlToUtf8(m[1]));
+    if (s && s.token && s.owner && s.repo) {
+      if (confirm(`Connect this device to ${s.owner}/${s.repo} on GitHub?`)) {
+        saveSettings({
+          token: s.token, owner: s.owner, repo: s.repo,
+          path: s.path || "secureclip-data.json", branch: s.branch || "main",
+        });
+        toast("Connected");
+      }
+    }
+  } catch { /* malformed link, ignore */ }
+  history.replaceState(null, "", location.pathname + location.search);
 }
 
 async function handleSettingsSave() {
@@ -502,6 +601,10 @@ function renderModal() {
     $("#overlay").addEventListener("mousedown", (e) => { if (e.target.id === "overlay") closeModal(); });
     $("#stCancel").onclick = closeModal;
     $("#stSave").onclick = handleSettingsSave;
+    $("#stDefaultPass").oninput = (e) => { state.defaultPass = e.target.value || null; };
+    $("#stClearDefault").onclick = () => { state.defaultPass = null; $("#stDefaultPass").value = ""; toast("Default cleared"); };
+    $("#stCopyLink").onclick = copySetupLink;
+    $("#stShowQr").onclick = showSetupQr;
   } else if (ui.modal.mode === "editor") {
     root.innerHTML = renderEditorModal();
     $("#overlay").addEventListener("mousedown", (e) => { if (e.target.id === "overlay") closeModal(); });
@@ -525,6 +628,7 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
 
+tryImportSetupFromHash();
 loadFromGithub();
 
 // gentle auto-refresh while the tab is visible and no modal is open (keeps devices in sync)

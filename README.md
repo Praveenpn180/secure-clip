@@ -45,6 +45,22 @@ name, and (optionally) file path/branch → Save & connect. On mobile, use
   20s while the tab is open, so a save on one device shows up on the other
   without extra taps.
 
+## Passphrases
+
+- Every locked item can have its own passphrase, **or**
+- Open Settings and set a **default passphrase** — it's kept in memory for
+  that browser tab only (never saved or synced), auto-unlocks any item locked
+  with it, and pre-fills the lock field on new items. Any individual item can
+  still be given a different passphrase by typing over the pre-filled value.
+
+## Connecting a second device
+
+Settings → **Copy setup link** or **Show QR code**. Both encode your token
+and repo details into a one-time link. Open it (or scan it) once on the new
+device and confirm — it fills in Settings for you and strips itself from the
+address bar/history right after. Treat that link like a password: only send
+it over a channel you trust (e.g. AirDrop, not a public chat).
+
 ## Notes
 
 - If you edit the same item on two devices at nearly the same moment, the
