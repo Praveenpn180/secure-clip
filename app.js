@@ -492,30 +492,45 @@ function renderSettingsModal() {
         <hr style="border:none;border-top:1px solid var(--border);margin:18px 0">
 
         <h2>Connect a new device</h2>
-        <div class="hint" style="margin-bottom:10px">Generates a one-time link containing these settings (including your token). Open it once on the other device, or scan the QR — it's removed from the address bar automatically after import. Treat it like a password: only share it over a channel you trust.</div>
+        <div class="hint" style="margin-bottom:10px">Generates a one-time link containing these settings (including your token). Open it on the other device, or scan the QR with the button below — it's removed from the address bar automatically after import. Treat it like a password: only share it over a channel you trust.</div>
         <div class="sheet-actions" style="justify-content:flex-start">
           <button class="btn" id="stCopyLink">🔗 Copy setup link</button>
           <button class="btn" id="stShowQr">▦ Show QR code</button>
         </div>
         <div id="qrBox" style="margin-top:12px;display:flex;justify-content:center"></div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:18px 0">
+
+        <h2>Have a setup link or QR from another device?</h2>
+        <div class="sheet-actions" style="justify-content:flex-start">
+          <button class="btn accent" id="stScanQr">📷 Scan QR</button>
+        </div>
+        <div class="field" style="margin-top:10px">
+          <label>Or paste the setup link here</label>
+          <input type="text" id="stPasteLink" placeholder="https://…/#setup=…">
+          <div class="sheet-actions" style="justify-content:flex-start;margin-top:8px">
+            <button class="btn" id="stPasteImport">Import</button>
+          </div>
+        </div>
       </div>
     </div>`;
 }
 
-let qrLibLoading = null;
-function loadQrLib() {
-  if (window.QRCode) return Promise.resolve();
-  if (qrLibLoading) return qrLibLoading;
-  qrLibLoading = new Promise((resolve, reject) => {
+// ---------- vendored libraries (self-hosted, no third-party CDN) ----------
+function loadScriptOnce(src, globalCheck) {
+  return new Promise((resolve, reject) => {
+    if (globalCheck()) return resolve();
     const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js";
-    script.onload = resolve;
-    script.onerror = () => { qrLibLoading = null; reject(new Error("load failed")); };
+    script.src = src;
+    script.onload = () => (globalCheck() ? resolve() : reject(new Error("script loaded but export missing")));
+    script.onerror = () => reject(new Error("failed to load " + src));
     document.head.appendChild(script);
   });
-  return qrLibLoading;
 }
+function loadQrLib() { return loadScriptOnce("vendor/qrcode.min.js", () => !!window.QRCode); }
+function loadJsQrLib() { return loadScriptOnce("vendor/jsqr.min.js", () => !!window.jsQR); }
 
+// ---------- setup link (generate / share) ----------
 function buildSetupUrl() {
   const s = getSettings();
   if (!settingsComplete(s)) { toast("Save settings first"); return null; }
@@ -536,28 +551,114 @@ async function showSetupQr() {
   try {
     await loadQrLib();
     box.innerHTML = "";
-    new QRCode(box, { text: url, width: 200, height: 200, colorDark: "#0d0f13", colorLight: "#e6e8ec" });
-  } catch {
-    box.textContent = "Couldn't load the QR generator — check your connection.";
+    const canvas = document.createElement("canvas");
+    box.appendChild(canvas);
+    await QRCode.toCanvas(canvas, url, { width: 220, margin: 2, color: { dark: "#0d0f13", light: "#e6e8ec" } });
+  } catch (e) {
+    box.textContent = "Couldn't generate the QR code (" + e.message + ").";
   }
+}
+
+// ---------- setup link (parse / import) ----------
+function parseSetupPayload(text) {
+  if (!text) return null;
+  const m = text.match(/#setup=([^\s&]+)/);
+  const payload = m ? m[1] : text.trim();
+  try {
+    const s = JSON.parse(b64UrlToUtf8(payload));
+    if (s && s.token && s.owner && s.repo) return s;
+  } catch { /* not a valid setup payload */ }
+  return null;
+}
+
+async function importSetup(s, { fromScan = false } = {}) {
+  if (!confirm(`Connect this device to ${s.owner}/${s.repo} on GitHub?`)) return false;
+  saveSettings({
+    token: s.token, owner: s.owner, repo: s.repo,
+    path: s.path || "secureclip-data.json", branch: s.branch || "main",
+  });
+  toast("Connected");
+  closeModal();
+  await loadFromGithub();
+  return true;
 }
 
 function tryImportSetupFromHash() {
   const m = location.hash.match(/^#setup=(.+)$/);
   if (!m) return;
-  try {
-    const s = JSON.parse(b64UrlToUtf8(m[1]));
-    if (s && s.token && s.owner && s.repo) {
-      if (confirm(`Connect this device to ${s.owner}/${s.repo} on GitHub?`)) {
-        saveSettings({
-          token: s.token, owner: s.owner, repo: s.repo,
-          path: s.path || "secureclip-data.json", branch: s.branch || "main",
-        });
-        toast("Connected");
-      }
-    }
-  } catch { /* malformed link, ignore */ }
+  const s = parseSetupPayload(m[1]);
+  if (s) importSetup(s);
   history.replaceState(null, "", location.pathname + location.search);
+}
+
+async function handlePasteImport() {
+  const s = parseSetupPayload($("#stPasteLink").value);
+  if (!s) { toast("That doesn't look like a setup link"); return; }
+  await importSetup(s);
+}
+
+// ---------- scan QR via camera ----------
+let scanStream = null;
+function stopScan() {
+  if (scanStream) { scanStream.getTracks().forEach((t) => t.stop()); scanStream = null; }
+}
+
+function openScanner() {
+  ui.modal = { mode: "scan" };
+  renderModal();
+}
+
+function renderScanModal() {
+  return `
+    <div class="overlay" id="overlay">
+      <div class="sheet">
+        <h2>Scan setup QR</h2>
+        <div id="scanArea" style="position:relative;border-radius:10px;overflow:hidden;background:#000">
+          <video id="scanVideo" playsinline muted style="width:100%;max-height:60vh;object-fit:cover;display:block"></video>
+        </div>
+        <div class="err-text" id="scanErr" style="display:none"></div>
+        <div class="sheet-actions">
+          <button class="btn ghost" id="scanCancel">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function startScanner() {
+  const errEl = $("#scanErr");
+  const video = $("#scanVideo");
+  try {
+    await loadJsQrLib();
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    video.srcObject = scanStream;
+    await video.play();
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+    const tick = () => {
+      if (!scanStream || ui.modal?.mode !== "scan") return; // modal closed / cancelled
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = window.jsQR(frame.data, frame.width, frame.height);
+        if (code) {
+          const s = parseSetupPayload(code.data);
+          if (s) {
+            stopScan();
+            importSetup(s, { fromScan: true });
+            return;
+          }
+        }
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  } catch (e) {
+    errEl.textContent = "Couldn't access the camera (" + e.message + "). You can paste the setup link instead from the settings screen.";
+    errEl.style.display = "block";
+  }
 }
 
 async function handleSettingsSave() {
@@ -593,6 +694,8 @@ function renderModal() {
     $("#stClearDefault").onclick = () => { state.defaultPass = null; $("#stDefaultPass").value = ""; toast("Default cleared"); };
     $("#stCopyLink").onclick = copySetupLink;
     $("#stShowQr").onclick = showSetupQr;
+    $("#stScanQr").onclick = openScanner;
+    $("#stPasteImport").onclick = handlePasteImport;
   } else if (ui.modal.mode === "editor") {
     root.innerHTML = renderEditorModal();
     $("#overlay").addEventListener("mousedown", (e) => { if (e.target.id === "overlay") closeModal(); });
@@ -601,15 +704,38 @@ function renderModal() {
     $("#edLock").onchange = renderPassFields;
     renderPassFields();
     $("#edText").focus();
+  } else if (ui.modal.mode === "scan") {
+    root.innerHTML = renderScanModal();
+    $("#scanCancel").onclick = closeModal;
+    startScanner();
   }
 }
 
-function closeModal() { ui.modal = null; $("#modalRoot").innerHTML = ""; }
+function closeModal() {
+  stopScan();
+  ui.modal = null;
+  $("#modalRoot").innerHTML = "";
+}
+
+// ---------- quick add (always-visible paste box) ----------
+async function handleQuickAdd() {
+  const ta = $("#quickAddText");
+  const text = ta.value;
+  if (!text.trim()) return;
+  const record = { id: uid(), createdAt: nowIso(), updatedAt: nowIso(), text, locked: false };
+  state.entries.unshift(record);
+  ta.value = "";
+  await persist("Add item");
+}
 
 // ---------- wire up top bar ----------
 $("#btnAdd").onclick = () => openEditor(null);
 $("#btnSettings").onclick = () => openSettings();
 $("#btnRefresh").onclick = () => loadFromGithub();
+$("#quickAddSave").onclick = handleQuickAdd;
+$("#quickAddText").addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); handleQuickAdd(); }
+});
 
 // ---------- boot ----------
 if ("serviceWorker" in navigator) {

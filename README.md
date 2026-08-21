@@ -56,10 +56,21 @@ name, and (optionally) file path/branch → Save & connect. On mobile, use
 ## Connecting a second device
 
 Settings → **Copy setup link** or **Show QR code**. Both encode your token
-and repo details into a one-time link. Open it (or scan it) once on the new
-device and confirm — it fills in Settings for you and strips itself from the
-address bar/history right after. Treat that link like a password: only send
-it over a channel you trust (e.g. AirDrop, not a public chat).
+and repo details into a one-time link. On the new device, either:
+- open Settings → **📷 Scan QR** and point the camera at the code, or
+- paste the link into the **"Or paste the setup link here"** box, or
+- just open the link directly (e.g. AirDrop it to the other device).
+
+Any of these fills in Settings for you and strips the link out of the
+address bar/history right after. Treat that link like a password: only
+share it over a channel you trust (AirDrop, scanning it in person — not a
+public chat). Scanning needs camera permission and only works over HTTPS
+(or on localhost); if the camera isn't available, use the paste box instead.
+
+The QR/camera code is self-contained in this app (`vendor/qrcode.min.js` and
+`vendor/jsqr.min.js`, both MIT/Apache-2.0 licensed, bundled from the `qrcode`
+and `jsqr` npm packages) — no third-party CDN is contacted at runtime, so
+your token never leaves the device while generating or reading a code.
 
 ## Notes
 
