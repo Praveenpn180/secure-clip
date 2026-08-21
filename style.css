@@ -110,6 +110,7 @@ main { padding-top: 18px; }
   display: flex;
   gap: 8px;
   align-items: flex-end;
+  margin-top: 10px;
   margin-bottom: 16px;
 }
 .quick-add textarea {
