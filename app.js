@@ -442,44 +442,63 @@ async function handleEditorSave() {
 }
 
 // ---------- settings modal ----------
-function openSettings() { ui.modal = { mode: "settings" }; renderModal(); }
+function openSettings() {
+  const configured = settingsComplete(getSettings());
+  ui.modal = { mode: "settings", editConnection: !configured };
+  renderModal();
+}
 
 function renderSettingsModal() {
   const s = getSettings() || {};
+  const configured = settingsComplete(s);
+  const editing = ui.modal.editConnection;
+
+  const connectionHtml = configured && !editing
+    ? `
+      <div class="conn-status">
+        <div class="conn-row"><span class="dot-ok"></span>Connected to <strong>${esc(s.owner)}/${esc(s.repo)}</strong></div>
+        <div class="hint">${esc(s.path)} · ${esc(s.branch)}</div>
+        <button class="btn ghost" id="stEditConn" style="margin-top:8px">Change connection</button>
+      </div>`
+    : `
+      <div class="field">
+        <label>Personal access token</label>
+        <input type="password" id="stToken" value="${esc(s.token || "")}" autocomplete="off" placeholder="ghp_… (fine-grained, contents read/write)">
+      </div>
+      <div class="field">
+        <label>Repo owner</label>
+        <input type="text" id="stOwner" value="${esc(s.owner || "")}" placeholder="your-username">
+      </div>
+      <div class="field">
+        <label>Repo name</label>
+        <input type="text" id="stRepo" value="${esc(s.repo || "")}" placeholder="secureclip-data">
+      </div>
+      <div class="field">
+        <label>File path</label>
+        <input type="text" id="stPath" value="${esc(s.path || "secureclip-data.json")}">
+      </div>
+      <div class="field">
+        <label>Branch</label>
+        <input type="text" id="stBranch" value="${esc(s.branch || "main")}">
+        <div class="hint">Use a <strong>private</strong> repo — only locked items are encrypted; unlocked items are stored as plain text in the file.</div>
+      </div>
+      <div class="err-text" id="stErr" style="display:none"></div>
+      <div class="sheet-actions">
+        ${configured ? '<button class="btn ghost" id="stCancelEdit">Cancel</button>' : '<button class="btn ghost" id="stCancel">Cancel</button>'}
+        <button class="btn accent" id="stSave">Save & connect</button>
+      </div>`;
+
   return `
     <div class="overlay" id="overlay">
       <div class="sheet">
-        <h2>GitHub sync settings</h2>
-        <div class="field">
-          <label>Personal access token</label>
-          <input type="password" id="stToken" value="${esc(s.token || "")}" autocomplete="off" placeholder="ghp_… (fine-grained, contents read/write)">
-        </div>
-        <div class="field">
-          <label>Repo owner</label>
-          <input type="text" id="stOwner" value="${esc(s.owner || "")}" placeholder="your-username">
-        </div>
-        <div class="field">
-          <label>Repo name</label>
-          <input type="text" id="stRepo" value="${esc(s.repo || "")}" placeholder="secureclip-data">
-        </div>
-        <div class="field">
-          <label>File path</label>
-          <input type="text" id="stPath" value="${esc(s.path || "secureclip-data.json")}">
-        </div>
-        <div class="field">
-          <label>Branch</label>
-          <input type="text" id="stBranch" value="${esc(s.branch || "main")}">
-          <div class="hint">Use a <strong>private</strong> repo — only locked items are encrypted; unlocked items are stored as plain text in the file.</div>
-        </div>
-        <div class="err-text" id="stErr" style="display:none"></div>
-        <div class="sheet-actions">
-          <button class="btn ghost" id="stCancel">Cancel</button>
-          <button class="btn accent" id="stSave">Save & connect</button>
-        </div>
+        <h2>Settings</h2>
 
-        <hr style="border:none;border-top:1px solid var(--border);margin:18px 0">
+        <div class="eyebrow">GitHub connection</div>
+        ${connectionHtml}
 
-        <h2>Default passphrase</h2>
+        <hr class="divider">
+
+        <div class="eyebrow">Default passphrase</div>
         <div class="field">
           <label>Used to auto-unlock locked items and pre-fill new locks</label>
           <input type="password" id="stDefaultPass" value="${esc(state.defaultPass || "")}" autocomplete="off" placeholder="Leave blank to keep using separate passphrases">
@@ -489,24 +508,15 @@ function renderSettingsModal() {
           <button class="btn ghost" id="stClearDefault">Clear</button>
         </div>
 
-        <hr style="border:none;border-top:1px solid var(--border);margin:18px 0">
+        <hr class="divider">
 
-        <h2>Connect a new device</h2>
-        <div class="hint" style="margin-bottom:10px">Generates a one-time link containing these settings (including your token). Open it on the other device, or scan the QR with the button below — it's removed from the address bar automatically after import. Treat it like a password: only share it over a channel you trust.</div>
+        <div class="eyebrow">Connect a new device</div>
+        <div class="hint" style="margin-bottom:10px">Copies a one-time link with these settings (including your token). Open it on the other device — it fills in Settings and removes itself from the address bar right after. Treat it like a password: only share it over a channel you trust.</div>
         <div class="sheet-actions" style="justify-content:flex-start">
           <button class="btn" id="stCopyLink">🔗 Copy setup link</button>
-          <button class="btn" id="stShowQr">▦ Show QR code</button>
         </div>
-        <div id="qrBox" style="margin-top:12px;display:flex;justify-content:center"></div>
-
-        <hr style="border:none;border-top:1px solid var(--border);margin:18px 0">
-
-        <h2>Have a setup link or QR from another device?</h2>
-        <div class="sheet-actions" style="justify-content:flex-start">
-          <button class="btn accent" id="stScanQr">📷 Scan QR</button>
-        </div>
-        <div class="field" style="margin-top:10px">
-          <label>Or paste the setup link here</label>
+        <div class="field" style="margin-top:12px">
+          <label>Or paste a setup link you received</label>
           <input type="text" id="stPasteLink" placeholder="https://…/#setup=…">
           <div class="sheet-actions" style="justify-content:flex-start;margin-top:8px">
             <button class="btn" id="stPasteImport">Import</button>
@@ -515,20 +525,6 @@ function renderSettingsModal() {
       </div>
     </div>`;
 }
-
-// ---------- vendored libraries (self-hosted, no third-party CDN) ----------
-function loadScriptOnce(src, globalCheck) {
-  return new Promise((resolve, reject) => {
-    if (globalCheck()) return resolve();
-    const script = document.createElement("script");
-    script.src = src;
-    script.onload = () => (globalCheck() ? resolve() : reject(new Error("script loaded but export missing")));
-    script.onerror = () => reject(new Error("failed to load " + src));
-    document.head.appendChild(script);
-  });
-}
-function loadQrLib() { return loadScriptOnce("vendor/qrcode.min.js", () => !!window.QRCode); }
-function loadJsQrLib() { return loadScriptOnce("vendor/jsqr.min.js", () => !!window.jsQR); }
 
 // ---------- setup link (generate / share) ----------
 function buildSetupUrl() {
@@ -543,22 +539,6 @@ async function copySetupLink() {
   if (url) await copyText(url);
 }
 
-async function showSetupQr() {
-  const url = buildSetupUrl();
-  if (!url) return;
-  const box = $("#qrBox");
-  box.textContent = "Loading…";
-  try {
-    await loadQrLib();
-    box.innerHTML = "";
-    const canvas = document.createElement("canvas");
-    box.appendChild(canvas);
-    await QRCode.toCanvas(canvas, url, { width: 220, margin: 2, color: { dark: "#0d0f13", light: "#e6e8ec" } });
-  } catch (e) {
-    box.textContent = "Couldn't generate the QR code (" + e.message + ").";
-  }
-}
-
 // ---------- setup link (parse / import) ----------
 function parseSetupPayload(text) {
   if (!text) return null;
@@ -571,7 +551,7 @@ function parseSetupPayload(text) {
   return null;
 }
 
-async function importSetup(s, { fromScan = false } = {}) {
+async function importSetup(s) {
   if (!confirm(`Connect this device to ${s.owner}/${s.repo} on GitHub?`)) return false;
   saveSettings({
     token: s.token, owner: s.owner, repo: s.repo,
@@ -597,70 +577,6 @@ async function handlePasteImport() {
   await importSetup(s);
 }
 
-// ---------- scan QR via camera ----------
-let scanStream = null;
-function stopScan() {
-  if (scanStream) { scanStream.getTracks().forEach((t) => t.stop()); scanStream = null; }
-}
-
-function openScanner() {
-  ui.modal = { mode: "scan" };
-  renderModal();
-}
-
-function renderScanModal() {
-  return `
-    <div class="overlay" id="overlay">
-      <div class="sheet">
-        <h2>Scan setup QR</h2>
-        <div id="scanArea" style="position:relative;border-radius:10px;overflow:hidden;background:#000">
-          <video id="scanVideo" playsinline muted style="width:100%;max-height:60vh;object-fit:cover;display:block"></video>
-        </div>
-        <div class="err-text" id="scanErr" style="display:none"></div>
-        <div class="sheet-actions">
-          <button class="btn ghost" id="scanCancel">Cancel</button>
-        </div>
-      </div>
-    </div>`;
-}
-
-async function startScanner() {
-  const errEl = $("#scanErr");
-  const video = $("#scanVideo");
-  try {
-    await loadJsQrLib();
-    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-    video.srcObject = scanStream;
-    await video.play();
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
-    const tick = () => {
-      if (!scanStream || ui.modal?.mode !== "scan") return; // modal closed / cancelled
-      if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = window.jsQR(frame.data, frame.width, frame.height);
-        if (code) {
-          const s = parseSetupPayload(code.data);
-          if (s) {
-            stopScan();
-            importSetup(s, { fromScan: true });
-            return;
-          }
-        }
-      }
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  } catch (e) {
-    errEl.textContent = "Couldn't access the camera (" + e.message + "). You can paste the setup link instead from the settings screen.";
-    errEl.style.display = "block";
-  }
-}
-
 async function handleSettingsSave() {
   const s = {
     token: $("#stToken").value.trim(),
@@ -676,7 +592,9 @@ async function handleSettingsSave() {
     return;
   }
   saveSettings(s);
-  closeModal();
+  ui.modal.editConnection = false;
+  toast("Connected");
+  renderModal();
   await loadFromGithub();
 }
 
@@ -688,13 +606,17 @@ function renderModal() {
   if (ui.modal.mode === "settings") {
     root.innerHTML = renderSettingsModal();
     $("#overlay").addEventListener("mousedown", (e) => { if (e.target.id === "overlay") closeModal(); });
-    $("#stCancel").onclick = closeModal;
-    $("#stSave").onclick = handleSettingsSave;
+    const cancelBtn = $("#stCancel") || $("#stCancelEdit");
+    if (cancelBtn) cancelBtn.onclick = cancelBtn.id === "stCancelEdit"
+      ? () => { ui.modal.editConnection = false; renderModal(); }
+      : closeModal;
+    const saveBtn = $("#stSave");
+    if (saveBtn) saveBtn.onclick = handleSettingsSave;
+    const editConnBtn = $("#stEditConn");
+    if (editConnBtn) editConnBtn.onclick = () => { ui.modal.editConnection = true; renderModal(); };
     $("#stDefaultPass").oninput = (e) => { state.defaultPass = e.target.value || null; };
     $("#stClearDefault").onclick = () => { state.defaultPass = null; $("#stDefaultPass").value = ""; toast("Default cleared"); };
     $("#stCopyLink").onclick = copySetupLink;
-    $("#stShowQr").onclick = showSetupQr;
-    $("#stScanQr").onclick = openScanner;
     $("#stPasteImport").onclick = handlePasteImport;
   } else if (ui.modal.mode === "editor") {
     root.innerHTML = renderEditorModal();
@@ -704,15 +626,10 @@ function renderModal() {
     $("#edLock").onchange = renderPassFields;
     renderPassFields();
     $("#edText").focus();
-  } else if (ui.modal.mode === "scan") {
-    root.innerHTML = renderScanModal();
-    $("#scanCancel").onclick = closeModal;
-    startScanner();
   }
 }
 
 function closeModal() {
-  stopScan();
   ui.modal = null;
   $("#modalRoot").innerHTML = "";
 }
